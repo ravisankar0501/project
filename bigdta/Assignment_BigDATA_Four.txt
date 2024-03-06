@@ -1,0 +1,552 @@
+
+//Ravi Sankar Gogineni R11788968
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+#include <math.h>
+#define  MASTER	0
+
+void Gen_Data(int INDEX_s, int INDEX_e, double* data, int DMS);
+void Centroid_S(int INDEX_s, int INDEX_e, double* max, int* I_off, int DMS, double** C_Cen, double* data);
+void INIT_kClusters(int INDEX_s, int INDEX_e, int i, int N_Clusters, double* max, int* I_off, int DMS, double* data, double** C_Cen);
+int Assigned_Point(int INDEX_s, int INDEX_e, int DMS, int N_Clusters, double* data, double** C_Cen, int* Cluster_A, int* Cl_Size);
+void Initial_Cluster_Condition(int INDEX_s, int INDEX_e, int Empty_T, int* Index_NEW, double* max, int N_Clusters, int DMS, double* data, double** C_Cen);
+void Cluster_Sort(int INDEX_s, int INDEX_e, int N_Clusters, int DMS, double* data, int* Cluster_A);
+void Cen_NEW(int INDEX_s, int INDEX_e, int DMS, int* global_Cl_Size, double** C_Cen, double* data, int* Cluster_A);
+void Calculate_CLUSTRadius(int INDEX_s, int INDEX_e, int N_Clusters, int DMS, int* Cluster_A, double** C_Cen, double* Cluster_RAD, double* data);
+void Exhaustive_SEARCH(int INDEX_s, int INDEX_e, int index, int* Visit_N, double* min, int DMS, double* query, double* data, int* Cluster_A);
+
+int main(int ARGC, char* ARGV[]) {
+	int DMS, Point_N, N_Clusters, n_data, * Cluster_S, * Cl_Size, * Cluster_A, i, j, k, l, x, I_off = -1, index, G_Sum = 0;
+	double* data, * query, * Cluster_RAD, * Distance_BD, ** global_C_Cen, * Global_C_RADIUS, ** C_Cen, sum = 0.0, max = -1, min, d;
+	int   Tasks_N, Tasks_ID, T2, T1, T3, Size_Chunk, Empty_T = -1, Index_NEW = -1, Visit_N = 0, Visit_N_x = 0, count, search_times;
+
+	MPI_Status status;// Initialize the variables
+
+	MPI_Init(&ARGC, &ARGV);
+	MPI_Comm_size(MPI_COMM_WORLD, &Tasks_N);
+	MPI_Comm_rank(MPI_COMM_WORLD, &Tasks_ID);
+	printf("MPI task %d has started...\n", Tasks_ID);
+
+	DMS = atoi(ARGV[1]);
+	n_data = atoi(ARGV[2]);
+	N_Clusters = atoi(ARGV[3]);
+	Point_N = n_data * DMS;
+
+	data = (double*)malloc(Point_N * sizeof(double));
+	query = (double*)malloc(DMS * sizeof(double));
+	Cl_Size = (int*)calloc(N_Clusters, sizeof(int));
+	Distance_BD = malloc(N_Clusters * sizeof(double));
+	Cluster_S = (int*)malloc(N_Clusters * sizeof(int));
+	Cluster_RAD = (double*)calloc(N_Clusters, sizeof(double));
+	Global_C_RADIUS = (double*)calloc(N_Clusters, sizeof(double));
+	Cluster_A = (int*)malloc(n_data * sizeof(int));
+	C_Cen = (double**)malloc(N_Clusters * sizeof(double*));
+	for (i = 0; i < N_Clusters; i++)
+		*(C_Cen + i) = (double*)malloc(DMS * sizeof(double));
+	global_C_Cen = (double**)malloc(N_Clusters * sizeof(double*));
+	for (i = 0; i < N_Clusters; i++)
+		*(global_C_Cen + i) = (double*)malloc(DMS * sizeof(double));
+	int* global_Cl_Size = (int*)calloc(N_Clusters, sizeof(int));
+
+	Size_Chunk = (n_data / Tasks_N);
+	T1 = 1;
+	T2 = 2;
+	T3 = 3;
+	int condition_loop;
+	int* Recv_Buff_Size = malloc(Tasks_N * sizeof(int));
+	int* displs = calloc(Tasks_N, sizeof(int));
+	double global_max;
+	int* check = malloc(Tasks_N * sizeof(int));
+	double* final_d = malloc(Tasks_N * sizeof(double));
+	int seeds[4] = { 1,2,3,4 };
+
+	if (Tasks_ID == MASTER) {
+		if (Tasks_N == 1) {
+			for (i = 0; i < 4; i++) {
+				srand(seeds[i]);
+				Gen_Data(i * (Size_Chunk * DMS) / 4, (i + 1) * (Size_Chunk * DMS) / 4, data, DMS);
+			}
+		}
+		else if (Tasks_N == 2) {
+			for (i = 0; i < 2; i++) {
+				srand(seeds[i]);
+				Gen_Data(i * (Size_Chunk * DMS) / 2, (i + 1) * (Size_Chunk * DMS) / 2, data, DMS);
+			}
+		}
+		else if (Tasks_N == 4) {
+			srand(seeds[Tasks_ID]);
+			Gen_Data(0, (Size_Chunk * DMS), data, DMS);
+		}
+		else
+			printf(" \n enter no of tasks to 1,2,4 \n");
+
+		for (i = 0; i < DMS; i++)
+			C_Cen[0][i] = data[i];
+
+		MPI_Bcast(&C_Cen[0][0], DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+
+		Centroid_S(0, Size_Chunk, &max, &I_off, DMS, C_Cen, data);
+		MPI_Allreduce(&max, &global_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+		if (global_max == max)
+		{
+			for (j = 0; j < DMS; j++)
+				C_Cen[1][j] = data[(I_off * DMS) + j];
+		}
+		else {
+			MPI_Recv(C_Cen[1], DMS, MPI_DOUBLE, MPI_ANY_SOURCE, 5, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		}
+		MPI_Bcast(C_Cen[1], DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+		for (i = 2; i < N_Clusters; i++) {
+			INIT_kClusters(0, Size_Chunk, i, N_Clusters, &max, &I_off, DMS, data, C_Cen);
+			MPI_Allreduce(&max, &global_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+			if (global_max == max)
+			{
+				for (j = 0; j < DMS; j++)
+					C_Cen[i][j] = data[(I_off * DMS) + j];
+			}
+			else {
+				MPI_Recv(C_Cen[i], DMS, MPI_DOUBLE, MPI_ANY_SOURCE, T3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			}
+			MPI_Bcast(C_Cen[i], DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+		}
+		while (1) {
+			for (i = 0; i < N_Clusters; i++)
+				Cl_Size[i] = 0;
+			check[Tasks_ID] = Assigned_Point(0, Size_Chunk, DMS, N_Clusters, data, C_Cen, Cluster_A, Cl_Size);
+			//MPI_Allgather(&check[Tasks_ID], 1, MPI_INT, check, 1, MPI_INT, MPI_COMM_WORLD);
+			MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, check, 1, MPI_INT, MPI_COMM_WORLD);
+			sum = 0;
+			for (i = 0; i < Tasks_N; i++)
+				sum += check[i];
+			if (sum == 0)
+				break;
+			MPI_Allreduce(Cl_Size, global_Cl_Size, N_Clusters, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+			Cluster_S[0] = 0;
+			for (i = 1; i < N_Clusters; i++) {
+				Cluster_S[i] = Cluster_S[i - 1] + global_Cl_Size[i - 1];
+			}
+			MPI_Bcast(&Cluster_S[0], N_Clusters, MPI_INT, MASTER, MPI_COMM_WORLD);
+			for (i = 0; i < Tasks_N; i++) {
+				if (i != (Tasks_N - 1))
+					Recv_Buff_Size[i] = Size_Chunk;
+				else
+					Recv_Buff_Size[i] = (n_data - ((Tasks_N - 1) * Size_Chunk));
+				displs[i] = i * Size_Chunk;
+			}
+			MPI_Bcast(&Recv_Buff_Size[0], Tasks_N, MPI_INT, MASTER, MPI_COMM_WORLD);
+			MPI_Bcast(&displs[0], Tasks_N, MPI_INT, MASTER, MPI_COMM_WORLD);
+			//MPI_Allgatherv(&Cluster_A[0], Size_Chunk, MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+			MPI_Allgatherv(MPI_IN_PLACE, Size_Chunk, MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+			for (i = 0; i < N_Clusters; i++) {
+				if (global_Cl_Size[i] == 0) {
+					Empty_T = i;
+					break;
+				}
+			}
+			MPI_Bcast(&Empty_T, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+			if (Empty_T != -1) {
+				Initial_Cluster_Condition(0, Size_Chunk, Empty_T, &Index_NEW, &max, N_Clusters, DMS, data, C_Cen);
+				MPI_Allreduce(&max, &global_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+				if (global_max == max)
+				{
+					for (j = 0; j < DMS; j++)
+						C_Cen[Empty_T][j] = data[(Index_NEW * DMS) + j];
+				}
+				else {
+					T3++;
+					MPI_Recv(C_Cen[Empty_T], DMS, MPI_DOUBLE, MPI_ANY_SOURCE, T3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+				}
+				MPI_Bcast(C_Cen[Empty_T], DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+			}
+			else {
+				Cluster_Sort(0, Size_Chunk, N_Clusters, DMS, data, Cluster_A);
+				//MPI_Allgatherv(&Cluster_A[0], Size_Chunk, MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+				MPI_Allgatherv(MPI_IN_PLACE, Size_Chunk, MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+				for (i = 0; i < Tasks_N; i++) {
+					if (i != (Tasks_N - 1))
+						Recv_Buff_Size[i] = Size_Chunk * DMS;
+					else
+						Recv_Buff_Size[i] = (n_data - ((Tasks_N - 1) * Size_Chunk)) * DMS;
+					displs[i] = i * Size_Chunk * DMS;
+				}
+				MPI_Bcast(&Recv_Buff_Size[0], Tasks_N, MPI_INT, MASTER, MPI_COMM_WORLD);
+				MPI_Bcast(&displs[0], Tasks_N, MPI_INT, MASTER, MPI_COMM_WORLD);
+				//MPI_Allgatherv(&data[0], Size_Chunk*DMS, MPI_DOUBLE, data, Recv_Buff_Size, displs, MPI_DOUBLE, MPI_COMM_WORLD);
+				MPI_Allgatherv(MPI_IN_PLACE, Size_Chunk * DMS, MPI_DOUBLE, data, Recv_Buff_Size, displs, MPI_DOUBLE, MPI_COMM_WORLD);
+				Cluster_Sort(0, n_data, N_Clusters, DMS, data, Cluster_A);
+				MPI_Bcast(&Cluster_A[0], n_data, MPI_INT, MASTER, MPI_COMM_WORLD);
+				MPI_Bcast(&data[0], n_data * DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+				for (i = 0; i < N_Clusters; i++) {
+					for (j = 0; j < DMS; j++) {
+						C_Cen[i][j] = 0.0;
+					}
+				}
+				Cen_NEW(0, Size_Chunk, DMS, global_Cl_Size, C_Cen, data, Cluster_A);
+				for (i = 0; i < N_Clusters; i++)
+					MPI_Allreduce(C_Cen[i], global_C_Cen[i], DMS, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+			}
+		}
+		Calculate_CLUSTRadius(0, Size_Chunk, N_Clusters, DMS, Cluster_A, global_C_Cen, Cluster_RAD, data);
+		MPI_Allreduce(Cluster_RAD, Global_C_RADIUS, N_Clusters, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+		for (search_times = 0; search_times < 1; search_times++) {
+			Visit_N = 0;
+			Visit_N_x = 0;
+			srand(5 + search_times * 100);
+			printf("cluster point:\n");
+			for (i = 0; i < DMS; i++)
+
+				query[i] = ((double)rand() * (101)) / (double)RAND_MAX;
+			printf("%f\n", query[i]);
+
+			MPI_Bcast(&query[0], DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+			int count = 0;
+			min = -1.0;
+			for (x = 0; x < N_Clusters; x++) {
+				d = 0.0;
+				for (i = 0; i < DMS; i++) {
+					d = d + pow((query[i] - global_C_Cen[x][i]), 2);
+				}
+				d = (Global_C_RADIUS[x] - sqrt(d));
+				if (d <= 0) {
+					index = x;
+					count++;
+					d = -d;
+				}
+				else if ((min == -1.0 || min > d) && count == 0) {
+					min = d;
+					index = x;
+				}
+				Distance_BD[x] = d;
+			}
+			MPI_Bcast(&Distance_BD[0], N_Clusters, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+			d = 0.0;
+			min = -1.0;
+			for (i = Cluster_S[index]; i < (Cluster_S[index] + global_Cl_Size[index]); i++) {
+				d = 0.0;
+				Visit_N++;
+				for (j = 0; j < DMS; j++)
+					d = d + pow((query[j] - data[(i * DMS) + j]), 2);
+				d = sqrt(d);
+				if (min == -1.0 || min > d)
+					min = d;
+			}
+			MPI_Bcast(&min, 1, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+			MPI_Bcast(&Visit_N, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+			MPI_Bcast(&index, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+
+			for (x = 0; x < N_Clusters; x++) {
+				if (Distance_BD[x] < min && index != x) {
+					Exhaustive_SEARCH(0, Size_Chunk, x, &Visit_N_x, &min, DMS, query, data, Cluster_A);
+				}
+			}
+			MPI_Reduce(&Visit_N_x, &G_Sum, 1, MPI_INT, MPI_SUM, MASTER, MPI_COMM_WORLD);
+			Visit_N = Visit_N + G_Sum;
+
+			MPI_Gather(&min, 1, MPI_DOUBLE, final_d, 1, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+			for (i = 0; i < Tasks_N; i++) {
+				if (min == -1.0)
+					min = final_d[i];
+				else if (final_d[i] != -1.0 && min > final_d[i])
+					min = final_d[i];
+			}
+			printf("\n minimum d : %lf \n", min);
+		}
+	}if (Tasks_ID > MASTER) {
+		condition_loop = ((Tasks_ID * Size_Chunk) + Size_Chunk);
+		if (Tasks_ID == (Tasks_N - 1))
+			condition_loop = (n_data);
+		if (Tasks_N == 2) {
+			for (i = 2; i < 4; i++) {
+				srand(seeds[i]);
+				Gen_Data((i * (Size_Chunk)*DMS) / 2, (i + 1) * (condition_loop * DMS) / 4, data, DMS);
+			}
+		}
+		else if (Tasks_N == 4) {
+			srand(Tasks_ID + 1);
+			Gen_Data((Tasks_ID * Size_Chunk) * DMS, (condition_loop * DMS), data, DMS);
+		}
+		MPI_Bcast(&C_Cen[0][0], DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+		Centroid_S(Tasks_ID * Size_Chunk, condition_loop, &max, &I_off, DMS, C_Cen, data);
+		MPI_Allreduce(&max, &global_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+		if (global_max == max)
+		{
+			for (j = 0; j < DMS; j++)
+				C_Cen[1][j] = data[(I_off * DMS) + j];
+			MPI_Send(C_Cen[1], DMS, MPI_DOUBLE, MASTER, 5, MPI_COMM_WORLD);
+		}
+		MPI_Bcast(C_Cen[1], DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+		for (i = 2; i < N_Clusters; i++) {
+			INIT_kClusters(Tasks_ID * Size_Chunk, condition_loop, i, N_Clusters, &max, &I_off, DMS, data, C_Cen);
+			MPI_Allreduce(&max, &global_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+			if (global_max == max)
+			{
+				for (j = 0; j < DMS; j++)
+					C_Cen[i][j] = data[(I_off * DMS) + j];
+				MPI_Send(C_Cen[i], DMS, MPI_DOUBLE, MASTER, T3, MPI_COMM_WORLD);
+			}
+			MPI_Bcast(C_Cen[i], DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+		}
+		while (1) {
+			for (i = 0; i < N_Clusters; i++)
+				Cl_Size[i] = 0;
+			check[Tasks_ID] = Assigned_Point(Tasks_ID * Size_Chunk, condition_loop, DMS, N_Clusters, data, C_Cen, Cluster_A, Cl_Size);
+			//MPI_Allgather(&check[Tasks_ID], 1, MPI_INT, check, 1, MPI_INT, MPI_COMM_WORLD);
+			MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, check, 1, MPI_INT, MPI_COMM_WORLD);
+			sum = 0;
+			for (i = 0; i < Tasks_N; i++)
+				sum += check[i];
+			if (sum == 0)
+				break;
+			MPI_Allreduce(Cl_Size, global_Cl_Size, N_Clusters, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+			MPI_Bcast(&Cluster_S[0], N_Clusters, MPI_INT, MASTER, MPI_COMM_WORLD);
+			MPI_Bcast(&Recv_Buff_Size[0], Tasks_N, MPI_INT, MASTER, MPI_COMM_WORLD);
+			MPI_Bcast(&displs[0], Tasks_N, MPI_INT, MASTER, MPI_COMM_WORLD);
+			if (Tasks_ID != (Tasks_N - 1))
+				//MPI_Allgatherv(&Cluster_A[(Tasks_ID*Size_Chunk)], Size_Chunk, MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+				MPI_Allgatherv(MPI_IN_PLACE, Size_Chunk, MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+			else
+				//MPI_Allgatherv(&Cluster_A[(Tasks_ID*Size_Chunk)], (n_data - ((Tasks_N - 1)*Size_Chunk)), MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+				MPI_Allgatherv(MPI_IN_PLACE, (n_data - ((Tasks_N - 1) * Size_Chunk)), MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+
+			MPI_Bcast(&Empty_T, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+			if (Empty_T != -1) {
+				Initial_Cluster_Condition(Tasks_ID * Size_Chunk, condition_loop, Empty_T, &Index_NEW, &max, N_Clusters, DMS, data, C_Cen);
+				MPI_Allreduce(&max, &global_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+				if (global_max == max)
+				{
+					for (j = 0; j < DMS; j++)
+						C_Cen[Empty_T][j] = data[(Index_NEW * DMS) + j];
+					T3++;
+					MPI_Send(C_Cen[Empty_T], DMS, MPI_DOUBLE, MASTER, T3, MPI_COMM_WORLD);
+				}
+				MPI_Bcast(C_Cen[Empty_T], DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+			}
+			else {
+				Cluster_Sort(Tasks_ID * Size_Chunk, condition_loop, N_Clusters, DMS, data, Cluster_A);
+				if (Tasks_ID != (Tasks_N - 1))
+					//MPI_Allgatherv(&Cluster_A[(Tasks_ID*Size_Chunk)], Size_Chunk, MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+					MPI_Allgatherv(MPI_IN_PLACE, Size_Chunk, MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+				else
+					//MPI_Allgatherv(&Cluster_A[(Tasks_ID*Size_Chunk)], (n_data - ((Tasks_N - 1)*Size_Chunk)), MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+					MPI_Allgatherv(MPI_IN_PLACE, (n_data - ((Tasks_N - 1) * Size_Chunk)), MPI_INT, Cluster_A, Recv_Buff_Size, displs, MPI_INT, MPI_COMM_WORLD);
+
+				MPI_Bcast(&Recv_Buff_Size[0], Tasks_N, MPI_INT, MASTER, MPI_COMM_WORLD);
+				MPI_Bcast(&displs[0], Tasks_N, MPI_INT, MASTER, MPI_COMM_WORLD);
+				if (Tasks_ID != (Tasks_N - 1))
+					//MPI_Allgatherv(&data[(Tasks_ID*Size_Chunk*DMS)], Size_Chunk*DMS, MPI_DOUBLE, data, Recv_Buff_Size, displs, MPI_DOUBLE, MPI_COMM_WORLD);
+					MPI_Allgatherv(MPI_IN_PLACE, Size_Chunk * DMS, MPI_DOUBLE, data, Recv_Buff_Size, displs, MPI_DOUBLE, MPI_COMM_WORLD);
+				else
+					//MPI_Allgatherv(&data[(Tasks_ID*Size_Chunk*DMS)], (n_data - ((Tasks_N - 1)*Size_Chunk))*DMS, MPI_DOUBLE, data, Recv_Buff_Size, displs, MPI_DOUBLE, MPI_COMM_WORLD);
+					MPI_Allgatherv(MPI_IN_PLACE, (n_data - ((Tasks_N - 1) * Size_Chunk)) * DMS, MPI_DOUBLE, data, Recv_Buff_Size, displs, MPI_DOUBLE, MPI_COMM_WORLD);
+
+				MPI_Bcast(&Cluster_A[0], n_data, MPI_INT, MASTER, MPI_COMM_WORLD);
+				MPI_Bcast(&data[0], n_data * DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+
+				for (i = 0; i < N_Clusters; i++) {
+					for (j = 0; j < DMS; j++) {
+						C_Cen[i][j] = 0.0;
+					}
+				}
+				Cen_NEW(Tasks_ID * Size_Chunk, condition_loop, DMS, global_Cl_Size, C_Cen, data, Cluster_A);
+				for (i = 0; i < N_Clusters; i++)
+					MPI_Allreduce(C_Cen[i], global_C_Cen[i], DMS, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+			}
+		}
+
+		Calculate_CLUSTRadius(Tasks_ID * Size_Chunk, condition_loop, N_Clusters, DMS, Cluster_A, global_C_Cen, Cluster_RAD, data);
+		MPI_Allreduce(Cluster_RAD, Global_C_RADIUS, N_Clusters, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+
+		for (search_times = 0; search_times < 1; search_times++) {
+			Visit_N_x = 0;
+			MPI_Bcast(&query[0], DMS, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+			MPI_Bcast(&Distance_BD[0], N_Clusters, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+			MPI_Bcast(&min, 1, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+			MPI_Bcast(&Visit_N, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+			MPI_Bcast(&index, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+			printf("query data:\n");
+			for (int i = 0;i < DMS;i++)
+			{
+				printf("%f\n", query[i]);
+			}
+			for (x = 0; x < N_Clusters; x++) {
+				if (Distance_BD[x] < min && index != x) {
+					Exhaustive_SEARCH(Tasks_ID * Size_Chunk, condition_loop, x, &Visit_N_x, &min, DMS, query, data, Cluster_A);
+				}
+			}
+			MPI_Reduce(&Visit_N_x, &G_Sum, 1, MPI_INT, MPI_SUM, MASTER, MPI_COMM_WORLD);
+			MPI_Gather(&min, 1, MPI_DOUBLE, final_d, 1, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+		}
+	}
+	MPI_Finalize();
+	return 0;
+}
+
+void Gen_Data(int INDEX_s, int INDEX_e, double* data, int DMS) {
+	int i;
+	for (i = INDEX_s; i < INDEX_e; i++) {
+		data[i] = ((double)rand() * (101)) / (double)RAND_MAX;
+	}
+}
+
+void Centroid_S(int INDEX_s, int INDEX_e, double* max, int* I_off, int DMS, double** C_Cen, double* data) {
+	int i, j;
+	double sum, local_max = -1, local_index;
+	for (i = INDEX_s; i < INDEX_e; i++) {
+		sum = 0.0;
+		for (j = 0; j < DMS; j++)
+			sum += pow(fabs(C_Cen[0][j] - data[(i * DMS) + j]), 2);
+		sum = sqrt(sum);
+		if (sum > local_max) {
+			local_max = sum;
+			local_index = i;
+		}
+	}
+	*max = local_max;
+	*I_off = local_index;
+}
+
+void INIT_kClusters(int INDEX_s, int INDEX_e, int i, int N_Clusters, double* max, int* I_off, int DMS, double* data, double** C_Cen) {
+	int j, l, k, local_index;
+	double min, local_max, sum;
+
+	local_max = -1.0;
+	for (j = INDEX_s; j < INDEX_e; j++) {
+		min = -1.0;
+		for (l = 0; l < i; l++) {
+			sum = 0.0;
+			for (k = 0; k < DMS; k++)
+				sum += pow((data[(j * DMS) + k] - C_Cen[l][k]), 2);
+			sum = sqrt(sum);
+			if (sum < min || min == -1.0) {
+				min = sum;
+			}
+		}
+		if (min > local_max) {
+			local_max = min;
+			local_index = j;
+		}
+
+	}
+	*max = local_max;
+	*I_off = local_index;
+}
+
+int Assigned_Point(int INDEX_s, int INDEX_e, int DMS, int N_Clusters, double* data, double** C_Cen, int* Cluster_A, int* Cl_Size) {
+	INDEX_s = INDEX_s * DMS;
+	INDEX_e = INDEX_e * DMS;
+
+	double min, d;
+	int  i, j, k, nearestc, C_counter = 0;
+	for (i = INDEX_s; i < INDEX_e; i = i + DMS) {
+		min = -1.0;
+		for (j = 0; j < N_Clusters; j++) {
+			d = 0.0;
+			for (k = 0; k < DMS; k++)
+				d += pow((data[i + k] - C_Cen[j][k]), 2);
+			d = sqrt(d);
+			if ((d < min) || (min == -1.0)) {
+				min = d;
+				nearestc = j;
+			}
+		}
+		if (Cluster_A[(i / DMS)] != nearestc)
+			C_counter++;
+		Cluster_A[(i / DMS)] = nearestc;
+		Cl_Size[nearestc]++;
+	}
+	return C_counter;
+}
+
+void Initial_Cluster_Condition(int INDEX_s, int INDEX_e, int Empty_T, int* Index_NEW, double* max, int N_Clusters, int DMS, double* data, double** C_Cen) {
+	double Maximum_Local, d, min;
+	int local_index, i, j, k;
+	Maximum_Local = -1.0;
+	INDEX_s = INDEX_s * DMS;
+	INDEX_e = INDEX_e * DMS;
+	for (i = INDEX_s; i < INDEX_e; i = i + DMS) {
+		min = -1.0;
+		for (j = 0; j < N_Clusters; j++) {
+			if (j == Empty_T)
+				continue;
+			d = 0.0;
+			for (k = 0; k < DMS; k++)
+				d += pow((data[i + k] - C_Cen[j][k]), 2);
+			d = sqrt(d);
+			if (d < min || min == -1.0)
+				min = d;
+		}
+		if (min > Maximum_Local) {
+			Maximum_Local = min;
+			local_index = i;
+		}
+	}
+	*max = Maximum_Local;
+	*Index_NEW = local_index;
+}
+void Cluster_Sort(int INDEX_s, int INDEX_e, int N_Clusters, int DMS, double* data, int* Cluster_A) {
+	int i, j, k;
+	double temp, temp1;
+	int left = INDEX_s;
+	INDEX_s = INDEX_s * DMS;
+	INDEX_e = INDEX_e * DMS;
+	for (i = 0; i < N_Clusters; i++) {
+		for (j = INDEX_s; j < INDEX_e; j = j + DMS) {
+			if (Cluster_A[(j / DMS)] == i) {
+				temp = Cluster_A[left];
+				Cluster_A[left] = Cluster_A[(j / DMS)];
+				Cluster_A[(j / DMS)] = temp;
+				for (k = 0; k < DMS; k++) {
+					temp1 = data[(left * DMS) + k];
+					data[(left * DMS) + k] = data[j + k];
+					data[j + k] = temp1;
+				}
+				left++;
+			}
+		}
+	}
+}
+
+void Cen_NEW(int INDEX_s, int INDEX_e, int DMS, int* global_Cl_Size, double** C_Cen, double* data, int* Cluster_A) {
+	int j, k;
+	INDEX_s = INDEX_s * DMS;
+	INDEX_e = INDEX_e * DMS;
+	for (j = INDEX_s; j < INDEX_e; j = j + DMS) {
+		for (k = 0; k < DMS; k++)
+			C_Cen[Cluster_A[j / DMS]][k] += data[j + k] / global_Cl_Size[Cluster_A[j / DMS]];
+	}
+}
+
+void Calculate_CLUSTRadius(int INDEX_s, int INDEX_e, int N_Clusters, int DMS, int* Cluster_A, double** global_C_Cen, double* Cluster_RAD, double* data) {
+	double  d;
+	int i, j, k;
+	INDEX_s = INDEX_s * DMS;
+	INDEX_e = INDEX_e * DMS;
+	for (j = INDEX_s; j < INDEX_e; j += DMS) {
+		d = 0.0;
+		for (k = 0; k < DMS; k++) {
+			d += pow((global_C_Cen[Cluster_A[j / DMS]][k] - data[j + k]), 2);
+		}
+		d = sqrt(d);
+		if (d > Cluster_RAD[Cluster_A[j / DMS]]) {
+			Cluster_RAD[Cluster_A[j / DMS]] = d;
+		}
+	}
+}
+void Exhaustive_SEARCH(int INDEX_s, int INDEX_e, int index, int* Visit_N_x, double* min, int DMS, double* query, double* data, int* Cluster_A) {
+	int i, j;
+	double d;
+	for (i = INDEX_s; i < INDEX_e; i++) {
+		if (Cluster_A[i] == index) {
+			d = 0.0;
+			*Visit_N_x = *Visit_N_x + 1;
+			for (j = 0; j < DMS; j++)
+				d = d + pow((query[j] - data[(i * DMS) + j]), 2);
+			d = sqrt(d);
+			if (*min > d)
+				*min = d;
+		}
+	}
+}

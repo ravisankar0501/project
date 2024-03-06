@@ -1,0 +1,75 @@
+Predicted : [[0.04141179]] 
+Real class :  [0.]
+
+with meso_f2f classifier:
+
+Predicted : [[0.8810234]] 
+Real class : [1.]
+Dealing with video  aassnaulhq.mp4
+Face extraction warning :  0 - no face
+Face extraction warning :  10 - no face
+Face extraction warning :  20 - no face
+Face extraction warning :  30 - no face
+Face extraction warning :  40 - no face
+Face extraction warning :  50 - no face
+Face extraction warning :  60 - no face
+Face extraction warning :  70 - found face in full frame [(80, 469, 155, 395)]
+Face extraction warning :  80 - found face in full frame [(174, 931, 308, 797)]
+Face extraction report of not_found : 9
+Face extraction report of no_face : 7
+Predicting  aassnaulhq.mp4
+2022-12-04 20:26:40.263287: W tensorflow/core/framework/cpu_allocator_impl.cc:80] Allocation of 18087936 exceeds 10% of free system memory.
+2022-12-04 20:26:40.280015: W tensorflow/core/framework/cpu_allocator_impl.cc:80] Allocation of 48234496 exceeds 10% of free system memory.
+2022-12-04 20:26:40.397870: W tensorflow/core/framework/cpu_allocator_impl.cc:80] Allocation of 48234496 exceeds 10% of free system memory.
+2022-12-04 20:26:40.447838: W tensorflow/core/framework/cpu_allocator_impl.cc:80] Allocation of 12058624 exceeds 10% of free system memory.
+2022-12-04 20:26:40.483133: W tensorflow/core/framework/cpu_allocator_impl.cc:80] Allocation of 12058624 exceeds 10% of free system memory.
+Dealing with video  aayfryxljh.mp4
+Face extraction warning :  0 - found face in full frame [(422, 1085, 615, 892)]
+Face extraction report of not_found : 1
+Face extraction report of no_face : 0
+Predicting  aayfryxljh.mp4
+Dealing with video  acazlolrpz.mp4
+Face extraction warning :  0 - found face in full frame [(423, 1474, 584, 1314)]
+Face extraction report of not_found : 1
+Face extraction report of no_face : 0
+Predicting  acazlolrpz.mp4
+Dealing with video  adohdulfwb.mp4
+Face extraction warning :  0 - found face in full frame [(148, 969, 379, 738)]
+Face extraction report of not_found : 1
+Face extraction report of no_face : 0
+Predicting  adohdulfwb.mp4
+Dealing with video  ahjnxtiamx.mp4
+Face extraction warning :  0 - found face in full frame [(337, 892, 529, 700)]
+Face extraction report of not_found : 1
+Face extraction report of no_face : 0
+Predicting  ahjnxtiamx.mp4
+Dealing with video  ajiyrjfyzp.mp4
+Face extraction warning :  0 - found face in full frame [(423, 1403, 584, 1243)]
+Face extraction warning :  99 - found face in full frame [(405, 1385, 566, 1225)]
+Face extraction report of not_found : 2
+Face extraction report of no_face : 0
+Predicting  ajiyrjfyzp.mp4
+Dealing with video  aktnlyqpah.mp4
+Face extraction warning :  0 - found face in full frame [(328, 917, 559, 686)]
+Face extraction report of not_found : 1
+Face extraction report of no_face : 0
+Predicting  aktnlyqpah.mp4
+Dealing with video  alrtntfxtd.mp4
+Face extraction warning :  0 - no face
+Face extraction warning :  11 - no face
+Face extraction warning :  22 - no face
+Face extraction warning :  33 - no face
+Face extraction warning :  44 - no face
+Face extraction warning :  55 - no face
+Face extraction warning :  66 - no face
+Face extraction warning :  77 - found face in full frame [(146, 511, 221, 436)]
+Face extraction warning :  88 - found face in full frame [(293, 1005, 427, 872)]
+`aayfryxljh` video class prediction : 0.9642857142857143
+`acazlolrpz` video class prediction : 1.0
+`adohdulfwb` video class prediction : 1.0
+`ahjnxtiamx` video class prediction : 1.0
+`ajiyrjfyzp` video class prediction : 0.9642857142857143
+`aktnlyqpah` video class prediction : 1.0
+`alrtntfxtd` video class prediction : 0.8571428571428571
+`aomqqjipcp` video class prediction : 0.9666666666666667
+PS C:\Users\MEGHANA\Downloads\MesoNet>

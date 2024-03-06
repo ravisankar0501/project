@@ -1,0 +1,52 @@
+@keyframes slideInFromLeft {
+    0% {
+        transform: translateX(-100%);
+        opacity: 0;
+    }
+    100% {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+body {
+    font-family:'Times New Roman', Times, serif;
+    margin: 0;
+    padding: 100px;
+    background-color: black; /* Set the background color to black */
+    color: #fff; /* Set text color to white */
+}
+
+/* Header Section */
+#header, #about, #skills, #experience, #education,#contact {
+    height: 70vh; /* Set the height to full viewport height */
+    text-align: center;
+    padding: 100px 20px; /* Adjust padding as needed */
+}
+
+#header h1, #about h2, #education h2, .content h3, .date {
+    animation: slideInFromLeft 1s ease-out;
+}
+
+#about p, #about h2 {
+    animation: slideInFromLeft 2s ease-out;
+}
+
+#skills, .event, .content {
+    animation: slideInFromLeft 2s ease-out;
+}
+
+.timeline {
+    animation: slideInFromLeft 2s ease-out;
+}
+
+
+
+#contact h2, #contact p {
+    margin-bottom: 20px; /* Add space below the heading */
+}
+
+#contact a {
+    color: #007bff; /* Set link color */
+    text-decoration: none; /* Remove underline */
+}
